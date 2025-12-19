@@ -52,12 +52,9 @@ jobs:
     - name: Determine target environment
       id: environment
       run: |
-        # Extraer el tag completo si existe
         if [[ "${{ github.ref }}" == refs/tags/* ]]; then
           TAG_NAME=${GITHUB_REF#refs/tags/}
           echo "Tag detectado: $TAG_NAME"
-
-          # Verificar si el tag termina en -dev o -test
           if [[ "$TAG_NAME" == *-dev ]]; then
             echo "env=dev" >> $GITHUB_OUTPUT
             echo "Ambiente destino: dev"
@@ -69,7 +66,6 @@ jobs:
             exit 1
           fi
         else
-          # Si no es un tag, no hacer deploy
           echo "env=none" >> $GITHUB_OUTPUT
           echo "No es un tag, saltando deployment"
         fi
@@ -106,8 +102,6 @@ jobs:
         token: ${{ secrets.INFRA_TOKEN }}
         path: infra
 
-    # FASE 2: DETERMINACION DE ARCHIVO A ACTUALIZAR
-    # Identifica cual values file modificar segun el ambiente
     - name: Determine values file to update
       id: values_file
       run: |
@@ -121,53 +115,29 @@ jobs:
       run: |
         VALUES_FILE="${{ steps.values_file.outputs.values_file }}"
         NEW_TAG="${{ needs.build-and-publish.outputs.version }}"
-
         echo "Actualizando $VALUES_FILE con tag: $NEW_TAG"
-
-        # Verificar que el archivo existe
         if [ ! -f "$VALUES_FILE" ]; then
           echo "ERROR: Archivo $VALUES_FILE no existe"
           exit 1
         fi
-
-        # Actualizar el tag usando sed
         sed -i "s|tag: .*|tag: \"$NEW_TAG\"|g" $VALUES_FILE
-
-        # Mostrar el cambio
         echo "Cambios realizados:"
         git diff $VALUES_FILE
-
 
     - name: Commit and push changes
       working-directory: infra
       run: |
         ENV="${{ needs.build-and-publish.outputs.environment }}"
         VERSION="${{ needs.build-and-publish.outputs.version }}"
-
-        # Configurar Git
         git config --local user.email "ci-bot@github.com"
         git config --local user.name "CI Bot"
-
-        # Verificar si hay cambios
         if git diff --quiet; then
           echo "No hay cambios para commitear"
           exit 0
         fi
-
-        # Mostrar estado
         echo "Archivos modificados:"
         git diff --name-only
-
-        # Commit y push
         git add .
-        git commit -m "Update backend ($ENV) to $VERSION
-
-Automated update by CI pipeline
-- Environment: $ENV
-- Image tag: $VERSION
-- Triggered by: ${{ github.sha }}"
-
+        git commit -m "Update backend ($ENV) to $VERSION"
         git push
-
         echo "Cambios pusheados exitosamente"
-        echo "ArgoCD sincronizara automaticamente en los proximos 3 minutos"
